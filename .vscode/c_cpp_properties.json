@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "name": "linux-gcc-x64",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/ros2_ws/install/*/include/*",
+                "${workspaceFolder}/ros2_ws/build/*/include",
+                "${workspaceFolder}/ros2_ws/src/*/include",
+                "/opt/ros/humble/include/**",
+                "/usr/include",
+                "/usr/local/include",
+                "/usr/include/opencv4"
+            ],
+            "defines": [],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compilerPath": "/usr/bin/gcc"
+        }
+    ],
+    "version": 4
+}

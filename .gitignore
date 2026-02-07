@@ -1,0 +1,5 @@
+bags/
+install/
+log/
+build/
+*.db
