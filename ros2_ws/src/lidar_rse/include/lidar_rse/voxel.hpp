@@ -1,12 +1,9 @@
-#ifndef LIDAR_RSE_H
-#define LIDAR_RSE_H
+#ifndef VOXEL_H
+#define VOXEL_H
 
 #include <eigen3/Eigen/Dense>
 #include <memory>
-#include "rclcpp/rclcpp.hpp"
-
-#include <geometry_msgs/msg/point_stamped.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <pcl/filters/voxel_grid.h>
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -22,9 +19,10 @@
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl_conversions/pcl_conversions.h>
 
-#include "voxel.hpp"
+#define IDLE 0
+#define ROTATE 0
 
-class lidar_rse
+class voxel
 {
     private:
         // ROS
@@ -51,13 +49,12 @@ class lidar_rse
         );
         Eigen::VectorXd rpyt;
 
-
         sensor_msgs::msg::PointCloud2 pcl;
         void pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg);
 
     public:
-        lidar_rse(std::shared_ptr<rclcpp::Node> node);
-        ~lidar_rse();
+        voxel(std::shared_ptr<rclcpp::Node> node);
+        ~voxel();
 };
 
 #endif

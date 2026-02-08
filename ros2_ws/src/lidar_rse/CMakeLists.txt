@@ -21,6 +21,8 @@ find_package(message_filters REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(PCL REQUIRED)
+find_package(pcl_conversions REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(APRILTAG REQUIRED apriltag)
@@ -56,6 +58,14 @@ ament_target_dependencies(lidar_rse_node
 target_link_libraries(lidar_rse_node
 	${OpenCV_LIBS}
     ${APRILTAG_LIBRARIES}
+    ${PCL_LIBRARIES}
+)
+target_include_directories(lidar_rse_node PUBLIC
+#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+#   $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS}
+  ${pcl_conversions_INCLUDE_DIRS}
+#   ${rclcpp_INCLUDE_DIRS}
 )
 
 install(TARGETS lidar_rse_node DESTINATION lib/${PROJECT_NAME})

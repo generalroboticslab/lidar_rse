@@ -10,9 +10,9 @@ def generate_launch_description():
     - follower (w/ velocity cmd)
     """
     rviz_config_path = os.path.join(
-        get_package_share_directory('a8_gimbal'),
+        get_package_share_directory('lidar_rse'),
         'launch',      
-        'gimbal.rviz'
+        'rse.rviz'
     )
     return LaunchDescription([
         Node(
