@@ -23,6 +23,8 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 #include "voxel.hpp"
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 class lidar_rse
 {
@@ -44,6 +46,8 @@ class lidar_rse
 
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_sub;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_pub;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr viz_pub;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr centroid_viz_pub_;
 
         Eigen::Affine3f body_2_inertial;
         Eigen::Affine3f rpyt2affine(
@@ -51,9 +55,36 @@ class lidar_rse
         );
         Eigen::VectorXd rpyt;
 
-
         sensor_msgs::msg::PointCloud2 pcl;
         void pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg);
+
+        pcl::PointCloud<pcl::PointXYZ>::Ptr convert_2_voxel(
+            const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
+            float leaf_size
+        );
+
+        void publishVoxelGrid(
+            const pcl::PointCloud<pcl::PointXYZ>::Ptr &voxel_cloud,
+            const std::string &frame_id,
+            const rclcpp::Time &stamp,
+            float leaf_size,
+            int id = 0
+        );
+
+        std::vector<Eigen::Vector4f> clusterAndComputeCentroids(
+            const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud,
+            double cluster_tolerance = 0.20,   // meters
+            int min_cluster_size = 20,
+            int max_cluster_size = 25000
+        );
+        void publishCentroidMarkers(
+            const std::vector<Eigen::Vector4f> &centroids,
+            const std::string &frame_id,
+            const rclcpp::Time &stamp,
+            float sphere_diameter = 0.25f,   // sphere size in meters
+            const std::string &ns = "livox_frame",
+            int id = 0
+        );
 
     public:
         lidar_rse(std::shared_ptr<rclcpp::Node> node);
