@@ -33,28 +33,17 @@ class voxel
 
         rclcpp::TimerBase::SharedPtr cam_timer;  
 
-        double range_effiective = 5.0;
-        double height_min = 0.0;
-
-
-        // rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr desired_atti_pub;
-        // rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr gimbal_state_sub;
-
-        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_sub;
-        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_pub;
-
-        Eigen::Affine3f body_2_inertial;
-        Eigen::Affine3f rpyt2affine(
-            const Eigen::VectorXd rpyt
-        );
-        Eigen::VectorXd rpyt;
-
-        sensor_msgs::msg::PointCloud2 pcl;
-        void pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg);
+        void grid_establish_filter(pcl::PointCloud<pcl::PointXYZ>);
+        void viz();
 
     public:
         voxel(std::shared_ptr<rclcpp::Node> node);
         ~voxel();
 };
+
+inline void voxel::grid_establish_filter(pcl::PointCloud<pcl::PointXYZ>)
+{
+
+}
 
 #endif
