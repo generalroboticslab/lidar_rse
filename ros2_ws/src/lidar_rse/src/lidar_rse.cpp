@@ -26,16 +26,6 @@ lidar_rse::lidar_rse(std::shared_ptr<rclcpp::Node> node)
 
     centroid_viz_pub_ = _node->create_publisher<visualization_msgs::msg::Marker>("rse/cluster", 10);
 
-    // cv_cap.open("rtsp://192.168.144.25:8554/main.264");
-    // if (!cv_cap.isOpened()) {
-    //     RCLCPP_ERROR(_node->get_logger(), "Cannot open camera stream");
-    //     running = false;
-    //     return;
-    // }
-    // cv_cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
-    // capture_thread = std::thread(&lidar_rse::cam_capture_loop, this);
-    // publish_thread = std::thread(&lidar_rse::cam_publish_loop, this);
-
     rpyt.resize(6);
 }
 
@@ -107,17 +97,46 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         cb.filter(*cloud_filtered);
     }
 
-    auto cloud_voxel = convert_2_voxel(cloud_filtered, 0.05);
-    publishVoxelGrid(cloud_voxel, "livox_frame", cloud_stamp, 0.05);
+    {
+        pcl::PassThrough<pcl::PointXYZ> pass;
+        pass.setInputCloud(cloud_filtered);
+        pass.setFilterFieldName("z");       // Filter along z axis
+        pass.setFilterLimits(-0.8, std::numeric_limits<float>::max());
+        pass.setFilterLimitsNegative(false); // Keep points within limits
+        pass.filter(*cloud_filtered);
+    }
+    std::cout<<cloud_filtered->size()<<std::endl;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_voxel = convert_2_voxel(cloud_filtered, 0.05);
+    std::cout<<cloud_voxel->size()<<std::endl<<std::endl;;
+
+    publishVoxelGrid(
+        cloud_voxel, 
+        "livox_frame", 
+        cloud_stamp, 
+        0.05
+    );
+
     double cluster_tolerance = 0.25; // ~5x leaf size is fine to start
-    int min_cluster_size = 15;
+    int min_cluster_size = 2;
     int max_cluster_size = 20000;
 
     // 1) cluster and compute centroids
-    auto centroids = clusterAndComputeCentroids(cloud_voxel, cluster_tolerance, min_cluster_size, max_cluster_size);
+    std::vector<Eigen::Vector4f> centroids = clusterAndComputeCentroids(
+        cloud_voxel, 
+        cluster_tolerance, 
+        min_cluster_size, 
+        max_cluster_size
+    );
+
+    std::cout<<centroids.size()<<std::endl<<std::endl<<std::endl;
 
     // 2) publish centroids to RViz (frame and stamp from your msg)
-    publishCentroidMarkers(centroids, "livox_frame", cloud_stamp, /*sphere_diameter=*/0.20f);
+    publishCentroidMarkers(
+        centroids, 
+        "livox_frame", 
+        cloud_stamp, 
+        0.20f
+    );
 
     sensor_msgs::msg::PointCloud2 cloud_msg;
     pcl::toROSMsg(*cloud_filtered, cloud_msg);
@@ -135,7 +154,8 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr lidar_rse::convert_2_voxel(
 )
 {
     auto cloud_voxel = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-    if (!input_cloud || input_cloud->empty()) {
+    if (!input_cloud || input_cloud->empty()) 
+    {
         return cloud_voxel;
     }
 
@@ -203,7 +223,7 @@ void lidar_rse::publishVoxelGrid(
     color.a = 0.8f;
     marker.color = color;
 
-    // Reserve points to avoid repeated reallocations
+    // reserve points to avoid repeated reallocations
     const size_t publish_count = std::min<size_t>(20000u, voxel_cloud->points.size());
     marker.points.reserve(publish_count);
 
@@ -258,7 +278,8 @@ std::vector<Eigen::Vector4f> lidar_rse::clusterAndComputeCentroids(
     ec.extract(cluster_indices);
 
     // for each cluster compute centroid
-    for (const auto &indices : cluster_indices) {
+    for (const auto &indices : cluster_indices) 
+    {
         // make a temporary point cloud for this cluster (optional but pcl::compute3DCentroid accepts indices too)
         pcl::PointCloud<pcl::PointXYZ> cluster_points;
         cluster_points.points.reserve(indices.indices.size());
@@ -308,7 +329,8 @@ void lidar_rse::publishCentroidMarkers(
     marker.points.reserve(centroids.size());
     // If you want per-sphere colors, fill marker.colors parallel to points
 
-    for (const auto &c : centroids) {
+    for (const auto &c : centroids)
+    {
         geometry_msgs::msg::Point p;
         p.x = c[0];
         p.y = c[1];

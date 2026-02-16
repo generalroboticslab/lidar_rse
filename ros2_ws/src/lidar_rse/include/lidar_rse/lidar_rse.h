@@ -25,6 +25,7 @@
 #include "voxel.hpp"
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
+#include <pcl/filters/passthrough.h>
 
 class lidar_rse
 {
