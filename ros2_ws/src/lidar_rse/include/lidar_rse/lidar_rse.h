@@ -48,7 +48,7 @@ class lidar_rse
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_sub;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_pub;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr viz_pub;
-        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr centroid_viz_pub_;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr centroid_viz_pub;
 
         Eigen::Affine3f body_2_inertial;
         Eigen::Affine3f rpyt2affine(
@@ -72,6 +72,14 @@ class lidar_rse
             int id = 0
         );
 
+        void publishVoxelGrid_w_vmap(
+            const pcl::PointCloud<pcl::PointXYZ>::Ptr &voxel_cloud,
+            const std::string &frame_id,
+            const rclcpp::Time &stamp,
+            float leaf_size,
+            int id = 0
+        );
+
         std::vector<Eigen::Vector4f> clusterAndComputeCentroids(
             const pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud,
             double cluster_tolerance = 0.20,   // meters
@@ -86,6 +94,10 @@ class lidar_rse
             const std::string &ns = "livox_frame",
             int id = 0
         );
+
+        void update_voxel(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud);
+
+        voxel_map vmap;
 
     public:
         lidar_rse(std::shared_ptr<rclcpp::Node> node);

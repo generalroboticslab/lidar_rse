@@ -24,7 +24,7 @@ lidar_rse::lidar_rse(std::shared_ptr<rclcpp::Node> node)
         10
     );
 
-    centroid_viz_pub_ = _node->create_publisher<visualization_msgs::msg::Marker>("rse/cluster", 10);
+    centroid_viz_pub = _node->create_publisher<visualization_msgs::msg::Marker>("rse/cluster", 10);
 
     rpyt.resize(6);
 }
@@ -107,9 +107,16 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
     }
     std::cout<<cloud_filtered->size()<<std::endl;
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_voxel = convert_2_voxel(cloud_filtered, 0.05);
+    update_voxel(cloud_filtered);
     std::cout<<cloud_voxel->size()<<std::endl<<std::endl;;
 
-    publishVoxelGrid(
+    // publishVoxelGrid(
+    //     cloud_voxel, 
+    //     "livox_frame", 
+    //     cloud_stamp, 
+    //     0.05
+    // );
+    publishVoxelGrid_w_vmap(
         cloud_voxel, 
         "livox_frame", 
         cloud_stamp, 
@@ -117,12 +124,14 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
     );
 
     double cluster_tolerance = 0.25; // ~5x leaf size is fine to start
-    int min_cluster_size = 2;
+    int min_cluster_size = 10;
     int max_cluster_size = 20000;
 
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl(20);
+    std::cout<<"pcl_dyn size: "<<pcl_dyn->size()<<std::endl<<std::endl;;
     // 1) cluster and compute centroids
     std::vector<Eigen::Vector4f> centroids = clusterAndComputeCentroids(
-        cloud_voxel, 
+        pcl_dyn, 
         cluster_tolerance, 
         min_cluster_size, 
         max_cluster_size
@@ -150,10 +159,11 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr lidar_rse::convert_2_voxel(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
-    float leaf_size    // default leaf size (meters)
+    float leaf_size    
+        // default leaf size (meters)
 )
 {
-    auto cloud_voxel = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_voxel = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     if (!input_cloud || input_cloud->empty()) 
     {
         return cloud_voxel;
@@ -177,10 +187,11 @@ Eigen::Affine3f lidar_rse::rpyt2affine(const Eigen::VectorXd rpyt)
     }
 
     affine_return.linear() =
-        (Eigen::AngleAxisf(rpyt(3),   Eigen::Vector3f::UnitZ()) *
-        Eigen::AngleAxisf(rpyt(4), Eigen::Vector3f::UnitY()) *
-        Eigen::AngleAxisf(rpyt(5),  Eigen::Vector3f::UnitX()))
-            .toRotationMatrix();
+        (
+            Eigen::AngleAxisf(rpyt(3),   Eigen::Vector3f::UnitZ()) *
+            Eigen::AngleAxisf(rpyt(4), Eigen::Vector3f::UnitY()) *
+            Eigen::AngleAxisf(rpyt(5),  Eigen::Vector3f::UnitX())
+        ).toRotationMatrix();
 
     affine_return.translation() = Eigen::Vector3f(
         rpyt(0),
@@ -199,7 +210,8 @@ void lidar_rse::publishVoxelGrid(
     int id
 )
 {
-    if (!viz_pub || !voxel_cloud) return;
+    if (!viz_pub || !voxel_cloud) 
+        return;
 
     visualization_msgs::msg::Marker marker;
     marker.header.frame_id = frame_id;
@@ -235,18 +247,6 @@ void lidar_rse::publishVoxelGrid(
         pt.z = p.z;
         marker.points.push_back(pt);
     }
-
-    // If there were more voxels than the cap, mark the marker as partial and set lifetime short
-    // if (voxel_cloud->points.size() > max_voxels_to_publish) {
-    //     RCLCPP_WARN(this->get_logger(),
-    //                 "publishVoxelGrid: voxel cloud size (%zu) > cap (%zu). Only publishing first %zu voxels.",
-    //                 voxel_cloud->points.size(), max_voxels_to_publish, publish_count);
-    //     // set a small lifetime so user sees it's partial (optional)
-    //     marker.lifetime = rclcpp::Duration::from_seconds(1.0);
-    // } else {
-    //     // persistent for a short time (RViz will keep if updated frequently); adjust as needed
-    //     marker.lifetime = rclcpp::Duration::from_seconds(0.5);
-    // }
 
     viz_pub->publish(marker);
 }
@@ -341,5 +341,106 @@ void lidar_rse::publishCentroidMarkers(
     // Lifetime: if you publish every frame, small lifetime is ok. Otherwise use 0 to persist.
     marker.lifetime = rclcpp::Duration::from_seconds(0.5);
 
-    centroid_viz_pub_->publish(marker);
+    centroid_viz_pub->publish(marker);
+}
+
+void lidar_rse::update_voxel(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud
+)
+{
+    if (!cloud || cloud->empty())
+        return;
+
+    const float hit_log_odds = 1.0f;   // tune this value
+
+    for (const auto& pt : cloud->points)
+    {
+        if (!pcl::isFinite(pt))
+            continue;
+
+        // Convert point to voxel key
+        VoxelKey key = vmap.key_from_point(pt.x, pt.y, pt.z);
+
+        // Update occupancy
+        vmap.add_log_odds(key, hit_log_odds);
+    }
+
+    std::cout<<"gan"<<std::endl;
+    std::cout<<vmap.map.size()<<std::endl;
+}
+
+void lidar_rse::publishVoxelGrid_w_vmap(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr &voxel_cloud,
+    const std::string &frame_id,
+    const rclcpp::Time &stamp,
+    float leaf_size,
+    int id
+)
+{
+    if (!viz_pub || !voxel_cloud) return;
+
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = frame_id;
+    marker.header.stamp = stamp;
+    marker.ns = "livox_frame";
+    marker.id = id;
+    marker.type = visualization_msgs::msg::Marker::CUBE_LIST;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+
+    marker.scale.x = leaf_size;
+    marker.scale.y = leaf_size;
+    marker.scale.z = leaf_size;
+
+    const size_t publish_count = std::min<size_t>(20000u, voxel_cloud->points.size());
+    marker.points.reserve(publish_count);
+    marker.colors.reserve(publish_count);   // IMPORTANT
+
+    for (size_t i = 0; i < publish_count; ++i)
+    {
+        const auto &p = voxel_cloud->points[i];
+
+        // Add voxel position
+        geometry_msgs::msg::Point pt;
+        pt.x = p.x;
+        pt.y = p.y;
+        pt.z = p.z;
+        marker.points.push_back(pt);
+
+        // Get log-odds from map
+        VoxelKey key = vmap.key_from_point(p.x, p.y, p.z);
+
+        float log_val = 0.0f;
+        vmap.get_log_odds(key, log_val);   // if not found -> stays 0
+
+        // Normalize [-100,100] → [0,1]
+        float normalized = (log_val + 100.0f) / 200.0f;
+        if (i == 0)
+            std::cout<<normalized<<std::endl;
+        normalized = std::clamp(normalized, 0.0f, 1.0f);
+
+        std_msgs::msg::ColorRGBA color;
+        color.a = 0.9f;
+
+        // Red → Yellow → Blue gradient
+        if (normalized < 0.5f)
+        {
+            // Red → Yellow
+            float t = normalized / 0.5f;
+            color.r = 1.0f;
+            color.g = t;
+            color.b = 0.0f;
+        }
+        else
+        {
+            // Yellow → Blue
+            float t = (normalized - 0.5f) / 0.5f;
+            color.r = 1.0f - t;
+            color.g = 1.0f - t;
+            color.b = t;
+        }
+
+        marker.colors.push_back(color);
+    }
+
+    viz_pub->publish(marker);
 }
