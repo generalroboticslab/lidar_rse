@@ -133,12 +133,22 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
 
     // pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl(2);
     pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl_w_intersection(10, cloud_voxel);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_all = vmap.extract_dynamic_pcl(100);
+    
     publishVoxelGrid_w_vmap(
         pcl_dyn, 
         "livox_frame", 
         cloud_stamp, 
         0.05
     );
+
+    // publishVoxelGrid_w_vmap(
+    //     voxel_all, 
+    //     "livox_frame", 
+    //     cloud_stamp, 
+    //     0.05
+    // );
     
     std::cout<<"pcl_dyn size: "<<pcl_dyn->size()<<std::endl<<std::endl;;
     // 1) cluster and compute centroids
