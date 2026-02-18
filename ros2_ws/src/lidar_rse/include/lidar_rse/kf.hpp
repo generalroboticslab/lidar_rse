@@ -7,6 +7,7 @@ class Kalman3
 public:
     using Vec3  = Eigen::Matrix<double,3,1>;
     using Mat3  = Eigen::Matrix<double,3,3>;
+    bool kf_start = false;
 
     Kalman3()
     {
@@ -26,6 +27,7 @@ public:
     {
         x_ = initial_pos;
         P_ = initial_P;
+        kf_start = true;
     }
 
     // Set process noise covariance (3x3)

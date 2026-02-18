@@ -127,8 +127,8 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
     // vmap.remove_isolated_voxels(2);
     std::cout<<cloud_voxel->size()<<std::endl<<std::endl;;
 
-    double cluster_tolerance = 0.25; // ~5x leaf size is fine to start
-    int min_cluster_size = 5;
+    double cluster_tolerance = 0.4; // ~5x leaf size is fine to start
+    int min_cluster_size = 3;
     int max_cluster_size = 20000;
 
     // pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl(2);
@@ -343,10 +343,24 @@ void lidar_rse::publishCentroidMarkers(
 
     for (const auto &c : centroids)
     {
+        if (c[1] < 0)
+            continue;        
+
+        if (!kf.kf_start)
+        {
+            Eigen::Vector3d first_pos(c[0], c[1], c[2]);
+            kf.init(first_pos);
+        }
+        else
+        {
+            Eigen::Vector3d meas(c[0], c[1], c[2]);
+            kf.step(meas);
+        }
+
         geometry_msgs::msg::Point p;
-        p.x = c[0];
-        p.y = c[1];
-        p.z = c[2];
+        p.x = kf.state()[0];
+        p.y = kf.state()[1];
+        p.z = kf.state()[2];
         marker.points.push_back(p);
     }
 
@@ -380,6 +394,21 @@ void lidar_rse::update_voxel(
         // for 
         bool add_or_not = true;
 
+        if (!kf.kf_start)
+        {
+            vmap.add_log_odds(key, hit_log_odds);
+            continue;
+        }
+
+        if ((kf.state() - pt_local).norm() > 0.5)
+            vmap.add_log_odds(key, 1);
+        else
+        {
+            vmap.add_log_odds(key, -1);
+
+        }
+
+
         // for (auto centroid : centroids)
         // {
         //     Eigen::Vector3d pt_centroid(
@@ -387,11 +416,10 @@ void lidar_rse::update_voxel(
         //         centroid(1),
         //         centroid(2)
         //     );
-        //     if ((pt_centroid - pt_local).norm() < 0.5)
-        //         add_or_not = false;
+            
         // }
-        if (add_or_not)
-            vmap.add_log_odds(key, hit_log_odds);
+        // if (add_or_not)
+            
 
 
         // vmap.decay(0.8, 0.05);
@@ -447,9 +475,10 @@ void lidar_rse::publishVoxelGrid_w_vmap(
 
         // Normalize [-100,100] → [0,1]
         float normalized = (log_val + 100.0f) / 200.0f;
+
         // normalized = (log_val) / 100.0f;
-        if (i == 0)
-            std::cout<<normalized<<std::endl;
+        // if (i == 0)
+        //     std::cout<<normalized<<std::endl;
         normalized = std::clamp(normalized, 0.0f, 1.0f);
 
         std_msgs::msg::ColorRGBA color;
