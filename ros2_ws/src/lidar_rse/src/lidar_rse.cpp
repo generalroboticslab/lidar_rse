@@ -4,10 +4,6 @@
 lidar_rse::lidar_rse(std::shared_ptr<rclcpp::Node> node)
 : _node(node)
 {
-    // // sensor-like QoS
-    // auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile();
-    // _pub = _node->create_publisher<sensor_msgs::msg::CompressedImage>("gimbal/image_raw/compressed", qos);
-
     pcl_sub = _node->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/livox/lidar",
         10,
@@ -116,18 +112,32 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
     //     cloud_stamp, 
     //     0.05
     // );
+    // publishVoxelGrid_w_vmap(
+    //     cloud_voxel, 
+    //     "livox_frame", 
+    //     cloud_stamp, 
+    //     0.05
+    // );
+
+    double cluster_tolerance = 0.25; // ~5x leaf size is fine to start
+    int min_cluster_size = 5;
+    int max_cluster_size = 20000;
+
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl(2);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl_w_intersection(10, cloud_voxel);
     publishVoxelGrid_w_vmap(
-        cloud_voxel, 
+        pcl_dyn, 
         "livox_frame", 
         cloud_stamp, 
         0.05
     );
-
-    double cluster_tolerance = 0.25; // ~5x leaf size is fine to start
-    int min_cluster_size = 10;
-    int max_cluster_size = 20000;
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl(20);
+    // publishVoxelGrid_w_vmap(
+    //     cloud_voxel, 
+    //     "livox_frame", 
+    //     cloud_stamp, 
+    //     0.05
+    // );
+    
     std::cout<<"pcl_dyn size: "<<pcl_dyn->size()<<std::endl<<std::endl;;
     // 1) cluster and compute centroids
     std::vector<Eigen::Vector4f> centroids = clusterAndComputeCentroids(
@@ -362,7 +372,10 @@ void lidar_rse::update_voxel(
         VoxelKey key = vmap.key_from_point(pt.x, pt.y, pt.z);
 
         // Update occupancy
+        
         vmap.add_log_odds(key, hit_log_odds);
+        // vmap.decay(0.8, 0.1);
+        
     }
 
     std::cout<<"gan"<<std::endl;
@@ -414,6 +427,7 @@ void lidar_rse::publishVoxelGrid_w_vmap(
 
         // Normalize [-100,100] → [0,1]
         float normalized = (log_val + 100.0f) / 200.0f;
+        // normalized = (log_val) / 100.0f;
         if (i == 0)
             std::cout<<normalized<<std::endl;
         normalized = std::clamp(normalized, 0.0f, 1.0f);

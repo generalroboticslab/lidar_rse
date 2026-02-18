@@ -99,6 +99,8 @@ class lidar_rse
 
         voxel_map vmap;
 
+        double time_passed = 0;
+
     public:
         lidar_rse(std::shared_ptr<rclcpp::Node> node);
         ~lidar_rse();

@@ -111,6 +111,74 @@ class voxel_map
             return cloud;
         }
 
+        pcl::PointCloud<pcl::PointXYZ>::Ptr extract_dynamic_pcl_w_intersection(
+            float threshold_L,
+            const pcl::PointCloud<pcl::PointXYZ>::Ptr& current_pcl
+        ) const
+        {
+            auto cloud = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+            if (!current_pcl || current_pcl->empty())
+                return cloud;
+
+            // Step 1: Convert current_pcl into voxel key set
+            std::unordered_set<VoxelKey, VoxelKeyHash> current_keys;
+            current_keys.reserve(current_pcl->size());
+
+            for (const auto& pt : current_pcl->points)
+            {
+                if (!pcl::isFinite(pt))
+                    continue;
+
+                current_keys.insert(key_from_point(pt.x, pt.y, pt.z));
+            }
+
+            // Step 2: Iterate map and check intersection
+            cloud->points.reserve(current_keys.size());
+
+            for (const auto &kv : map)
+            {
+                if (kv.second <= threshold_L)
+                {
+                    if (current_keys.find(kv.first) != current_keys.end())
+                    {
+                        float cx, cy, cz;
+                        center_from_key(kv.first, cx, cy, cz);
+
+                        pcl::PointXYZ p;
+                        p.x = cx;
+                        p.y = cy;
+                        p.z = cz;
+
+                        cloud->points.push_back(p);
+                    }
+                }
+            }
+
+            cloud->width  = static_cast<uint32_t>(cloud->points.size());
+            cloud->height = 1;
+            cloud->is_dense = true;
+
+            return cloud;
+        }
+
+        inline void decay(float lambda, float remove_threshold = 0.01f)
+        {
+            // lambda should be between 0 and 1
+            if (lambda < 0.0f) lambda = 0.0f;
+            if (lambda > 1.0f) lambda = 1.0f;
+
+            for (auto it = map.begin(); it != map.end(); )
+            {
+                it->second *= lambda;
+
+                // remove nearly forgotten voxels
+                if (std::fabs(it->second) < remove_threshold)
+                    it = map.erase(it);
+                else
+                    ++it;
+            }
+        }
+
         ~voxel_map(){};
         MapT map;
 
