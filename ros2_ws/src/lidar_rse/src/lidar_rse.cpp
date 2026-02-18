@@ -23,6 +23,14 @@ lidar_rse::lidar_rse(std::shared_ptr<rclcpp::Node> node)
     centroid_viz_pub = _node->create_publisher<visualization_msgs::msg::Marker>("rse/cluster", 10);
 
     rpyt.resize(6);
+
+    time_passed = _node->get_clock()->now().seconds();
+    centroids.clear();
+
+    Kalman3::Mat3 Q = Kalman3::Mat3::Identity() * 0.01; // process noise
+    Kalman3::Mat3 R = Kalman3::Mat3::Identity() * 0.05; // measurement noise
+    kf.setProcessNoise(Q);
+    kf.setMeasurementNoise(R);
 }
 
 lidar_rse::~lidar_rse()
@@ -47,6 +55,16 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         body_2_inertial
     );
 
+    // {
+    //     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    //     sor.setInputCloud(cloud_filtered);
+    //     sor.setMeanK(16);                // neighborhood size (tune)
+    //     sor.setStddevMulThresh(1.0);     // threshold (tune)
+    //     sor.filter(*cloud_filtered);
+
+    // };
+
+    // heuristic filtering
     {
         // filter out pcl too far away
         pcl::CropBox<pcl::PointXYZ> cb;
@@ -101,23 +119,13 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         pass.setFilterLimitsNegative(false); // Keep points within limits
         pass.filter(*cloud_filtered);
     }
+
+
     std::cout<<cloud_filtered->size()<<std::endl;
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_voxel = convert_2_voxel(cloud_filtered, 0.05);
     update_voxel(cloud_filtered);
+    // vmap.remove_isolated_voxels(2);
     std::cout<<cloud_voxel->size()<<std::endl<<std::endl;;
-
-    // publishVoxelGrid(
-    //     cloud_voxel, 
-    //     "livox_frame", 
-    //     cloud_stamp, 
-    //     0.05
-    // );
-    // publishVoxelGrid_w_vmap(
-    //     cloud_voxel, 
-    //     "livox_frame", 
-    //     cloud_stamp, 
-    //     0.05
-    // );
 
     double cluster_tolerance = 0.25; // ~5x leaf size is fine to start
     int min_cluster_size = 5;
@@ -131,16 +139,10 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         cloud_stamp, 
         0.05
     );
-    // publishVoxelGrid_w_vmap(
-    //     cloud_voxel, 
-    //     "livox_frame", 
-    //     cloud_stamp, 
-    //     0.05
-    // );
     
     std::cout<<"pcl_dyn size: "<<pcl_dyn->size()<<std::endl<<std::endl;;
     // 1) cluster and compute centroids
-    std::vector<Eigen::Vector4f> centroids = clusterAndComputeCentroids(
+    centroids = clusterAndComputeCentroids(
         pcl_dyn, 
         cluster_tolerance, 
         min_cluster_size, 
@@ -154,7 +156,7 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         centroids, 
         "livox_frame", 
         cloud_stamp, 
-        0.20f
+        0.10f
     );
 
     sensor_msgs::msg::PointCloud2 cloud_msg;
@@ -373,8 +375,26 @@ void lidar_rse::update_voxel(
 
         // Update occupancy
         
-        vmap.add_log_odds(key, hit_log_odds);
-        // vmap.decay(0.8, 0.1);
+        Eigen::Vector3d pt_local(pt.x, pt.y, pt.z);
+
+        // for 
+        bool add_or_not = true;
+
+        // for (auto centroid : centroids)
+        // {
+        //     Eigen::Vector3d pt_centroid(
+        //         centroid(0),
+        //         centroid(1),
+        //         centroid(2)
+        //     );
+        //     if ((pt_centroid - pt_local).norm() < 0.5)
+        //         add_or_not = false;
+        // }
+        if (add_or_not)
+            vmap.add_log_odds(key, hit_log_odds);
+
+
+        // vmap.decay(0.8, 0.05);
         
     }
 

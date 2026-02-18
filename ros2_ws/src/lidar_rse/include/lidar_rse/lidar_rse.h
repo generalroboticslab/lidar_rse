@@ -26,6 +26,9 @@
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+#include "kf.hpp"
+
 
 class lidar_rse
 {
@@ -99,7 +102,18 @@ class lidar_rse
 
         voxel_map vmap;
 
+        bool track_start = false;
+
         double time_passed = 0;
+
+        int cluster_no;
+
+        std::vector<Eigen::Vector4f> centroids;
+
+        Kalman3 kf;
+
+        
+
 
     public:
         lidar_rse(std::shared_ptr<rclcpp::Node> node);

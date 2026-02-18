@@ -179,6 +179,35 @@ class voxel_map
             }
         }
 
+        inline void remove_isolated_voxels(int min_neighbors = 2)
+        {
+            std::vector<VoxelKey> to_remove;
+
+            for (const auto &kv : map)
+            {
+                const VoxelKey &k = kv.first;
+                int neighbors = 0;
+
+                for (int dx = -1; dx <= 1; ++dx)
+                for (int dy = -1; dy <= 1; ++dy)
+                for (int dz = -1; dz <= 1; ++dz)
+                {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    VoxelKey nk{k.x + dx, k.y + dy, k.z + dz};
+                    if (map.find(nk) != map.end())
+                        neighbors++;
+                }
+
+                if (neighbors < min_neighbors)
+                    to_remove.push_back(k);
+            }
+
+            std::cout<<"to_remove - "<<to_remove.size()<<std::endl;
+
+            for (const auto &k : to_remove)
+                map.erase(k);
+        }
+
         ~voxel_map(){};
         MapT map;
 
