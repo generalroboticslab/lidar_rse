@@ -4,6 +4,10 @@
 lidar_rse::lidar_rse(std::shared_ptr<rclcpp::Node> node)
 : _node(node)
 {
+    _node->declare_parameter("roll", 0.0);
+    _node->declare_parameter("pitch", 0.0);
+    _node->declare_parameter("uav_id", 1000);
+
     pcl_sub = _node->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/livox/lidar",
         10,
@@ -18,12 +22,49 @@ lidar_rse::lidar_rse(std::shared_ptr<rclcpp::Node> node)
     viz_pub = _node->create_publisher<visualization_msgs::msg::Marker>(
         "rse/grid", 
         10
+    );    
+
+    centroid_viz_pub = _node->create_publisher<visualization_msgs::msg::Marker>("rse/cluster", 10);    
+
+    uav_id = _node->get_parameter("uav_id").as_int();;
+    auto qos_mavros_pose =
+        rclcpp::QoS(rclcpp::KeepLast(10))
+            .best_effort()
+            .durability_volatile();
+
+    ego_pose_sub = _node->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/p" + std::to_string(uav_id) + "/mavros/local_position/pose",
+        qos_mavros_pose,
+        std::bind(&lidar_rse::ego_pose_callback, this, std::placeholders::_1)
     );
 
-    centroid_viz_pub = _node->create_publisher<visualization_msgs::msg::Marker>("rse/cluster", 10);
+    p0_pose_sub = _node->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/leader/mavros/local_position/pose",
+        qos_mavros_pose,
+        std::bind(&lidar_rse::p0_pose_callback, this, std::placeholders::_1)
+    );
 
+    p2_pose_sub = _node->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/follower/mavros/local_position/pose",
+        qos_mavros_pose,
+        std::bind(&lidar_rse::p2_pose_callback, this, std::placeholders::_1)
+    );
+
+    p0_pose_pub = _node->create_publisher<geometry_msgs::msg::PoseStamped>("p0/pose", 10);
+    p1_pose_pub = _node->create_publisher<geometry_msgs::msg::PoseStamped>("p1/pose", 10);
+    p2_pose_pub = _node->create_publisher<geometry_msgs::msg::PoseStamped>("p2/pose", 10);
+
+
+    // lidar extrinsics
     rpyt.resize(6);
+    double lidar_roll  = _node->get_parameter("roll").as_double();
+    double lidar_pitch  = _node->get_parameter("pitch").as_double();
+    
+    rpyt << 0, 0, 0, 0, lidar_pitch/180.0*M_PI, lidar_roll/180.0*M_PI;
 
+    std::cout<<"ROLL: "<<lidar_roll<<std::endl;
+    std::cout<<"PITCH: "<<lidar_pitch<<std::endl;
+    
     time_passed = _node->get_clock()->now().seconds();
     centroids.clear();
 
@@ -40,29 +81,24 @@ lidar_rse::~lidar_rse()
 
 void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
 {
+    if (!got_ego_pose)
+        return;
     pcl = *msg;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     pcl::fromROSMsg(*msg, *cloud_filtered);
     rclcpp::Time cloud_stamp;
     pcl_conversions::fromPCL(cloud_filtered->header.stamp, cloud_stamp);
+    
+    lidar_2_body = rpyt2affine(rpyt);
+    body_2_inertial = poseMsg2Affine(ego_pose_feedback);
+    lidar_2_inertial = body_2_inertial * lidar_2_body;
 
-    rpyt << 0, 0, 0, 0, -98.0/180.0*M_PI, -180.0/180.0*M_PI;
-    body_2_inertial = rpyt2affine(rpyt);
     pcl::transformPointCloud(
         *cloud_filtered,
         *cloud_filtered,
-        body_2_inertial
+        lidar_2_inertial
     );
-
-    // {
-    //     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    //     sor.setInputCloud(cloud_filtered);
-    //     sor.setMeanK(16);                // neighborhood size (tune)
-    //     sor.setStddevMulThresh(1.0);     // threshold (tune)
-    //     sor.filter(*cloud_filtered);
-
-    // };
 
     // heuristic filtering
     {
@@ -70,15 +106,15 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         pcl::CropBox<pcl::PointXYZ> cb;
 
         const Eigen::Vector4f box_max(
-            4.0, 
-            4.0,
-            2.0, 
+            body_2_inertial.translation().x() + 10.0, 
+            body_2_inertial.translation().y() + 10.0,
+            body_2_inertial.translation().z() + 10.0, 
             1
         );
         const Eigen::Vector4f box_min(
-            -4.0, 
-            -4.0,
-            -10, 
+            body_2_inertial.translation().x() - 10.0, 
+            body_2_inertial.translation().y() - 10.0,
+            body_2_inertial.translation().z() - 10.0, 
             1
         );
         cb.setMax(box_max);
@@ -93,15 +129,15 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         pcl::CropBox<pcl::PointXYZ> cb;
 
         const Eigen::Vector4f box_max(
-            0.5, 
-            0.5,
-            5, 
+            body_2_inertial.translation().x() + 0.5, 
+            body_2_inertial.translation().y() + 0.5,
+            body_2_inertial.translation().z() + 0.5, 
             1
         );
         const Eigen::Vector4f box_min(
-            -0.5, 
-            -0.5,
-            -5, 
+            body_2_inertial.translation().x() - 0.5, 
+            body_2_inertial.translation().y() - 0.5,
+            body_2_inertial.translation().z() - 0.5, 
             1
         );
         cb.setMax(box_max);
@@ -112,13 +148,22 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
     }
 
     {
-        pcl::PassThrough<pcl::PointXYZ> pass;
-        pass.setInputCloud(cloud_filtered);
-        pass.setFilterFieldName("z");       // Filter along z axis
-        pass.setFilterLimits(-0.8, std::numeric_limits<float>::max());
-        pass.setFilterLimitsNegative(false); // Keep points within limits
-        pass.filter(*cloud_filtered);
+        // pcl::PassThrough<pcl::PointXYZ> pass;
+        // pass.setInputCloud(cloud_filtered);
+        // pass.setFilterFieldName("z");       // Filter along z axis
+        // pass.setFilterLimits(-0.8, std::numeric_limits<float>::max());
+        // pass.setFilterLimitsNegative(false); // Keep points within limits
+        // pass.filter(*cloud_filtered);
     }
+
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    pcl::toROSMsg(*cloud_filtered, cloud_msg);
+
+    cloud_msg.header.frame_id = "livox_frame";       
+    cloud_msg.header.stamp = cloud_stamp;  
+    pcl_pub->publish(cloud_msg);  
+
+    return;
 
 
     std::cout<<cloud_filtered->size()<<std::endl;
@@ -169,13 +214,7 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         0.10f
     );
 
-    sensor_msgs::msg::PointCloud2 cloud_msg;
-    pcl::toROSMsg(*cloud_filtered, cloud_msg);
-
-    cloud_msg.header.frame_id = "livox_frame";       
-    cloud_msg.header.stamp = cloud_stamp;  
-    pcl_pub->publish(cloud_msg);
-    
+      
 }
 
 

@@ -70,6 +70,13 @@ target_include_directories(lidar_rse_node PUBLIC
 
 install(TARGETS lidar_rse_node DESTINATION lib/${PROJECT_NAME})
 
+# imu_calib_node
+add_executable(imu_calib_node src/imu_calib.cpp)
+ament_target_dependencies(imu_calib_node
+	rclcpp 
+	sensor_msgs
+)
+install(TARGETS imu_calib_node DESTINATION lib/${PROJECT_NAME})
 
 ###################################################################
 install(

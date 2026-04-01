@@ -6,6 +6,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <pcl/point_cloud.h>
@@ -39,10 +40,9 @@ class lidar_rse
             .best_effort()
             .durability_volatile();
 
-        rclcpp::TimerBase::SharedPtr cam_timer;  
-
         double range_effiective = 5.0;
         double height_min = 0.0;
+        int uav_id;
 
 
         // rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr desired_atti_pub;
@@ -53,11 +53,41 @@ class lidar_rse
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr viz_pub;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr centroid_viz_pub;
 
-        Eigen::Affine3f body_2_inertial;
-        Eigen::Affine3f rpyt2affine(
-            const Eigen::VectorXd rpyt
-        );
-        Eigen::VectorXd rpyt;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ego_pose_sub;
+        geometry_msgs::msg::PoseStamped ego_pose_feedback;
+        bool got_ego_pose = false;
+        void ego_pose_callback(geometry_msgs::msg::PoseStamped::ConstSharedPtr msg){
+            if(!got_ego_pose)
+                got_ego_pose = true;
+            ego_pose_feedback = *msg;    
+            ego_pose_feedback.header.frame_id="livox_frame";        
+            p1_pose_pub->publish(ego_pose_feedback);
+        };
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr p1_pose_pub;
+
+
+        // think about how to generalize later
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr p0_pose_sub;
+        geometry_msgs::msg::PoseStamped p0_pose_feedback;
+        void p0_pose_callback(geometry_msgs::msg::PoseStamped::ConstSharedPtr msg){
+            p0_pose_feedback = *msg;          
+            p0_pose_feedback.header.frame_id="livox_frame";
+
+            p0_pose_pub->publish(p0_pose_feedback);  
+        };
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr p0_pose_pub;
+
+
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr p2_pose_sub;
+        geometry_msgs::msg::PoseStamped p2_pose_feedback;
+        void p2_pose_callback(geometry_msgs::msg::PoseStamped::ConstSharedPtr msg){
+            p2_pose_feedback = *msg;            
+            p2_pose_feedback.header.frame_id="livox_frame";
+            p2_pose_feedback.header.stamp = p0_pose_feedback.header.stamp;
+            p2_pose_pub->publish(p2_pose_feedback);
+        };
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr p2_pose_pub;
+        
 
         sensor_msgs::msg::PointCloud2 pcl;
         void pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg);
@@ -107,11 +137,35 @@ class lidar_rse
         double time_passed = 0;
 
         int cluster_no;
-
         std::vector<Eigen::Vector4f> centroids;
+        
+        // helper functions and objects
+        Eigen::Affine3f lidar_2_body;
+        Eigen::Affine3f body_2_inertial;
+        Eigen::Affine3f lidar_2_inertial;
+
+        Eigen::Affine3f rpyt2affine(
+            const Eigen::VectorXd rpyt
+        );
+        Eigen::VectorXd rpyt;
 
         Kalman3 kf;
 
+        Eigen::Affine3f poseMsg2Affine(const geometry_msgs::msg::PoseStamped& msg)
+        {
+            Eigen::Affine3f T = Eigen::Affine3f::Identity();
+
+            const auto& p = msg.pose.position;
+            const auto& q = msg.pose.orientation;
+
+            Eigen::Quaternionf quat(q.w, q.x, q.y, q.z);
+            quat.normalize();
+
+            T.linear() = quat.toRotationMatrix();
+            T.translation() = Eigen::Vector3f(p.x, p.y, p.z);
+
+            return T;
+        }
         
 
 

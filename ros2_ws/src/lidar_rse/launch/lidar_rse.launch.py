@@ -1,40 +1,28 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-
+import os
+from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     
-    # gimbal ctrl driver
-    gimbal_ctrl_driver_node = Node(
-        package='a8_gimbal',
-        executable='gimbal_ctrl_driver_node',
-        name='gimbal_ctrl_driver',
-        output='screen',
+    config_file = os.path.join(
+        get_package_share_directory('lidar_rse'),
+        'launch',
+        'rse_params.yaml'
     )
     
-    # camera
-    gimbal_cam_node = Node(
-        package='a8_gimbal',
-        executable='gimbal_cam_node',
-        name='gimbal_cam',
+    lidar_rse_node = Node(
+        package='lidar_rse',
+        executable='lidar_rse_node',
+        name='lidar_rse',
         output='screen',
+        parameters=[
+            config_file,
+        ]
     )
-    
-    # gimbal ctrl interfacing example
-
-    enable_auto_trajectory = False
-    gimbal_ctrl_server_node = Node(
-        package='a8_gimbal',
-        executable='gimbal_ctrl_server_node',
-        name='gimbal_ctrl_server',
-        output='screen',
-        parameters=[{
-            'enable_auto_trajectory': enable_auto_trajectory
-        }]
-    )    
     
     return LaunchDescription([
-        gimbal_ctrl_driver_node,
+        lidar_rse_node,
         # gimbal_ctrl_server_node,
-        gimbal_cam_node,
+        # gimbal_cam_node,
     ])
