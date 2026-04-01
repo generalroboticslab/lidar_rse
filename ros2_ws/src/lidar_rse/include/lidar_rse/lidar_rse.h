@@ -50,6 +50,7 @@ class lidar_rse
 
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_sub;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_pub;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_raw_pub;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr viz_pub;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr centroid_viz_pub;
 

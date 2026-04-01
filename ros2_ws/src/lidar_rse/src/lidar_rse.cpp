@@ -19,6 +19,11 @@ lidar_rse::lidar_rse(std::shared_ptr<rclcpp::Node> node)
         10
     );
 
+    pcl_raw_pub = _node->create_publisher<sensor_msgs::msg::PointCloud2>(
+        "rse/lidar_raw",
+        10
+    );
+
     viz_pub = _node->create_publisher<visualization_msgs::msg::Marker>(
         "rse/grid", 
         10
@@ -81,12 +86,15 @@ lidar_rse::~lidar_rse()
 
 void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
 {
-    // if (!got_ego_pose)
-    //     return;
+    if (!got_ego_pose)
+        return;
     pcl = *msg;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_raw = pcl::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
     pcl::fromROSMsg(*msg, *cloud_filtered);
+    pcl::fromROSMsg(*msg, *cloud_raw);
+
     rclcpp::Time cloud_stamp;
     pcl_conversions::fromPCL(cloud_filtered->header.stamp, cloud_stamp);
     
@@ -100,21 +108,27 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         lidar_2_inertial
     );
 
+    pcl::transformPointCloud(
+        *cloud_raw,
+        *cloud_raw,
+        lidar_2_inertial
+    );
+
     // heuristic filtering
     {
         // filter out pcl too far away
         pcl::CropBox<pcl::PointXYZ> cb;
-
+        // the 5.0-s should be related to you target size
         const Eigen::Vector4f box_max(
-            body_2_inertial.translation().x() + 10.0, 
-            body_2_inertial.translation().y() + 10.0,
-            body_2_inertial.translation().z() + 10.0, 
+            body_2_inertial.translation().x() + 5.0, 
+            body_2_inertial.translation().y() + 5.0,
+            body_2_inertial.translation().z() + 5.0, 
             1
         );
         const Eigen::Vector4f box_min(
-            body_2_inertial.translation().x() - 10.0, 
-            body_2_inertial.translation().y() - 10.0,
-            body_2_inertial.translation().z() - 10.0, 
+            body_2_inertial.translation().x() - 5.0, 
+            body_2_inertial.translation().y() - 5.0,
+            1.5, 
             1
         );
         cb.setMax(box_max);
@@ -151,42 +165,47 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         // pcl::PassThrough<pcl::PointXYZ> pass;
         // pass.setInputCloud(cloud_filtered);
         // pass.setFilterFieldName("z");       // Filter along z axis
-        // pass.setFilterLimits(-0.8, std::numeric_limits<float>::max());
+        // pass.setFilterLimits(0.4, std::numeric_limits<float>::max());
         // pass.setFilterLimitsNegative(false); // Keep points within limits
         // pass.filter(*cloud_filtered);
     }
 
-    sensor_msgs::msg::PointCloud2 cloud_msg;
+    sensor_msgs::msg::PointCloud2 cloud_msg, cloud_msg_raw;
     pcl::toROSMsg(*cloud_filtered, cloud_msg);
+    pcl::toROSMsg(*cloud_raw, cloud_msg_raw);
 
     cloud_msg.header.frame_id = "livox_frame";       
     cloud_msg.header.stamp = cloud_stamp;  
     pcl_pub->publish(cloud_msg);  
 
-    return;
+    cloud_msg_raw.header.frame_id = "livox_frame";       
+    cloud_msg_raw.header.stamp = cloud_stamp;  
+    pcl_raw_pub->publish(cloud_msg_raw);  
 
+    // return;
+    // cloud_filtered
 
-    std::cout<<cloud_filtered->size()<<std::endl;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_voxel = convert_2_voxel(cloud_filtered, 0.05);
-    update_voxel(cloud_filtered);
-    // vmap.remove_isolated_voxels(2);
-    std::cout<<cloud_voxel->size()<<std::endl<<std::endl;;
+    // std::cout<<cloud_filtered->size()<<std::endl;
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_voxel = convert_2_voxel(cloud_filtered, 0.0125);
+    // update_voxel(cloud_filtered);
+    // // vmap.remove_isolated_voxels(2);
+    // std::cout<<cloud_voxel->size()<<std::endl<<std::endl;;
 
     double cluster_tolerance = 0.4; // ~5x leaf size is fine to start
-    int min_cluster_size = 3;
+    int min_cluster_size = 1;
     int max_cluster_size = 20000;
 
     // pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl(2);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl_w_intersection(10, cloud_voxel);
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_dyn = vmap.extract_dynamic_pcl_w_intersection(10, cloud_voxel);
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_all = vmap.extract_dynamic_pcl(100);
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_all = vmap.extract_dynamic_pcl(100);
     
-    publishVoxelGrid_w_vmap(
-        pcl_dyn, 
-        "livox_frame", 
-        cloud_stamp, 
-        0.05
-    );
+    // publishVoxelGrid_w_vmap(
+    //     pcl_dyn, 
+    //     "livox_frame", 
+    //     cloud_stamp, 
+    //     0.05
+    // );
 
     // publishVoxelGrid_w_vmap(
     //     voxel_all, 
@@ -195,10 +214,16 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
     //     0.05
     // );
     
-    std::cout<<"pcl_dyn size: "<<pcl_dyn->size()<<std::endl<<std::endl;;
+    // std::cout<<"pcl_dyn size: "<<pcl_dyn->size()<<std::endl<<std::endl;;
     // 1) cluster and compute centroids
+    // centroids = clusterAndComputeCentroids(
+    //     pcl_filtered, 
+    //     cluster_tolerance, 
+    //     min_cluster_size, 
+    //     max_cluster_size
+    // );
     centroids = clusterAndComputeCentroids(
-        pcl_dyn, 
+        cloud_filtered, 
         cluster_tolerance, 
         min_cluster_size, 
         max_cluster_size
@@ -211,7 +236,7 @@ void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
         centroids, 
         "livox_frame", 
         cloud_stamp, 
-        0.10f
+        0.40f
     );
 
       
@@ -392,24 +417,27 @@ void lidar_rse::publishCentroidMarkers(
 
     for (const auto &c : centroids)
     {
-        if (c[1] < 0)
-            continue;        
+        // if (c[1] < 0)
+        //     continue;        
 
-        if (!kf.kf_start)
-        {
-            Eigen::Vector3d first_pos(c[0], c[1], c[2]);
-            kf.init(first_pos);
-        }
-        else
-        {
-            Eigen::Vector3d meas(c[0], c[1], c[2]);
-            kf.step(meas);
-        }
+        // if (!kf.kf_start)
+        // {
+        //     Eigen::Vector3d first_pos(c[0], c[1], c[2]);
+        //     kf.init(first_pos);
+        // }
+        // else
+        // {
+        //     Eigen::Vector3d meas(c[0], c[1], c[2]);
+        //     kf.step(meas);
+        // }
 
         geometry_msgs::msg::Point p;
-        p.x = kf.state()[0];
-        p.y = kf.state()[1];
-        p.z = kf.state()[2];
+        // p.x = kf.state()[0];
+        // p.y = kf.state()[1];
+        // p.z = kf.state()[2];
+        p.x = c[0];
+        p.y = c[1];
+        p.z = c[2];
         marker.points.push_back(p);
     }
 
