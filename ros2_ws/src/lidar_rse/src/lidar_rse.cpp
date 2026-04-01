@@ -81,8 +81,8 @@ lidar_rse::~lidar_rse()
 
 void lidar_rse::pcl_callback(const sensor_msgs::msg::PointCloud2::ConstPtr msg)
 {
-    if (!got_ego_pose)
-        return;
+    // if (!got_ego_pose)
+    //     return;
     pcl = *msg;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();

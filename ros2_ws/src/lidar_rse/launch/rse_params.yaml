@@ -1,6 +1,6 @@
 lidar_rse:
   ros__parameters:
     roll: -178.948
-    pitch: -20.639
+    pitch: -25.756
     uav_id: 1
     
